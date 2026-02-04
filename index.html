@@ -143,4 +143,311 @@
         <!-- STRATEGIST NOTES SECTION -->
         <div id="strategistNotesContainer" class="hidden mt-6">
           <h3 class="text-lg font-semibold text-yellow-800 mb-2 flex items-center">
-            <svg class="h-5 w-5 mr-2 text-yellow-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.636-1.214 2.316-1.214 2.952 0l4.708 8.996c.63 1.206-.29 2.75-1.624 2.75H5.173
+            <svg class="h-5 w-5 mr-2 text-yellow-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.636-1.214 2.316-1.214 2.952 0l4.708 8.996c.63 1.206-.29 2.75-1.624 2.75H5.173c-1.334 0-2.254-1.544-1.624-2.75l4.708-8.996zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" /></svg>
+            <span>Internal Strategist Notes (Not Copied)</span>
+          </h3>
+          <div id="strategistNotesOutput" class="w-full p-4 border border-yellow-300 rounded-lg bg-yellow-50 text-sm font-mono uppercase"></div>
+        </div>
+
+      </div>
+
+      <div id="error-message" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert">
+        <strong class="font-bold">Error:</strong> <span class="block sm:inline" id="error-text"></span>
+      </div>
+
+      <details class="text-sm text-gray-600">
+        <summary>Diagnostics</summary>
+        <div class="mt-2 space-y-1">
+          <div>Selected model: <span id="diagModel" class="font-medium"></span></div>
+          <div>Endpoint: <span id="diagEndpoint" class="font-medium"></span></div>
+          <div>Image MIME: <span id="diagMime" class="font-medium"></span></div>
+        </div>
+      </details>
+    </main>
+  </div>
+
+  <script>
+    // DOM refs
+    const apiKeyInput = document.getElementById('apiKey');
+    const refreshModelsBtn = document.getElementById('refreshModelsBtn');
+    const modelSelect = document.getElementById('modelSelect');
+    const modelHelp = document.getElementById('modelHelp');
+
+    const strategistNameInput = document.getElementById('strategistName');
+    const contactNameInput = document.getElementById('contactName');
+    const firmNameInput = document.getElementById('firmName');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+
+    const dropzone = document.getElementById('dropzone');
+    const fileHidden = document.getElementById('fileHidden');
+    const fileNameDisplay = document.getElementById('fileName');
+    const imagePreviewContainer = document.getElementById('image-preview-container');
+    const imagePreview = document.getElementById('image-preview');
+
+    const contactsUrlInput = document.getElementById('contactsUrl');
+
+    const generateBtn = document.getElementById('generateBtn');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const buttonText = document.getElementById('button-text');
+    const outputDiv = document.getElementById('output');
+    const emailOutput = document.getElementById('emailOutput');
+    const strategistNotesContainer = document.getElementById('strategistNotesContainer');
+    const strategistNotesOutput = document.getElementById('strategistNotesOutput');
+
+    const errorMessage = document.getElementById('error-message');
+    const errorText = document.getElementById('error-text');
+
+    const diagModel = document.getElementById('diagModel');
+    const diagEndpoint = document.getElementById('diagEndpoint');
+    const diagMime = document.getElementById('diagMime');
+
+    let imageBase64 = null;
+    let imageMime = null;
+
+    // Persist API key and Strategist Name
+    window.addEventListener('load', () => {
+      const savedApiKey = localStorage.getItem('ppcGeneratorApiKey');
+      if (savedApiKey) { apiKeyInput.value = savedApiKey; loadModels(); }
+      
+      const savedStrategistName = localStorage.getItem('ppcGeneratorStrategistName');
+      if (savedStrategistName) { strategistNameInput.value = savedStrategistName; }
+    });
+    apiKeyInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorApiKey', apiKeyInput.value));
+    strategistNameInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorStrategistName', strategistNameInput.value));
+
+    function showError(m){ errorText.textContent = m; errorMessage.classList.remove('hidden'); }
+    function hideError(){ errorMessage.classList.add('hidden'); }
+    function setLoading(b){ generateBtn.disabled=b; buttonText.classList.toggle('hidden', b); loadingSpinner.classList.toggle('hidden', !b); }
+    
+    function handleFile(file){
+      if (!file || !file.type.startsWith('image/')) { showError('Please upload a valid image file (PNG/JPG).'); return; }
+      hideError();
+      fileNameDisplay.textContent = `SHAPE file: ${file.name}`;
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const dataUrl=e.target.result;
+        const m=dataUrl.match(/^data:(.*?);base64,(.*)$/);
+        if(m){ imageMime=m[1]||'image/png'; imageBase64=m[2]; } else { imageMime=file.type||'image/png'; imageBase64=dataUrl.split(',')[1]; }
+        imagePreview.src=`data:${imageMime};base64,${imageBase64}`;
+        imagePreviewContainer.classList.remove('hidden');
+        dropzone.classList.add('ready');
+        diagMime.textContent=imageMime;
+      };
+      reader.readAsDataURL(file);
+    }
+    dropzone.addEventListener('click', ()=> fileHidden.click());
+    fileHidden.addEventListener('change', e=> handleFile(e.target.files[0]));
+    dropzone.addEventListener('dragover', e=> { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', ()=> dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e=> { e.preventDefault(); dropzone.classList.remove('dragover'); if (e.dataTransfer.files.length>0) handleFile(e.dataTransfer.files[0]); });
+    document.addEventListener('paste', e=>{
+      const items=(e.clipboardData||e.originalEvent?.clipboardData)?.items||[];
+      for (const it of items) if (it.type.indexOf('image')===0) { handleFile(it.getAsFile()); break; }
+    });
+
+    function escapeHtml(s){ return s.replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+    function toHtmlIfNeeded(text){
+      let t=text.trim();
+      t=t.replace(/^```(?:html)?/i,'').replace(/```$/i,'').trim();
+      if (/(<(p|ul|ol|li|strong|em|h\d|br|div|span|hr)\b)/i.test(t)) return t;
+      const lines=t.split(/\r?\n/); let html='', inList=false;
+      for (let raw of lines){
+        const line=raw.trimRight();
+        if (/^\s*•\s+/.test(line)){ if(!inList){html+='<ul>'; inList=true;} const item=line.replace(/^\s*•\s+/, ''); const withBold=escapeHtml(item).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); html+=`<li>${withBold}</li>`; }
+        else if (line===''){ if(inList){html+='</ul>'; inList=false;} }
+        else { if(inList){html+='</ul>'; inList=false;} const withBold=escapeHtml(line).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>'); html+=`<p>${withBold}</p>`; }
+      }
+      if (inList) html+='</ul>';
+      return html;
+    }
+
+    function applyStrategistName(html, name) {
+      const n = (name || '').trim();
+      return n ? html.replace(/\[Your Name\]/g, escapeHtml(n)) : html;
+    }
+
+    function injectSheetLink(html, url) {
+      const contactsLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/gi;
+      let cleanHtml = html.replace(contactsLineRe, '');
+      if (!url) return cleanHtml;
+
+      let safe = url.trim();
+      if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
+      const anchor = `<a href="${safe}" target="_blank" rel="noopener noreferrer">Google Sheet</a>`;
+      const canonicalLine = `<p>The following link is for your ppc contacts for the period - ${anchor}</p>`;
+      
+      const psIdx = cleanHtml.toLowerCase().indexOf('<p><strong>executive summary');
+      if (psIdx !== -1) {
+          return cleanHtml.slice(0, psIdx) + canonicalLine + '\n' + cleanHtml.slice(psIdx);
+      }
+      
+      const openingIdx = cleanHtml.toLowerCase().indexOf('</p>');
+      if (openingIdx !== -1) {
+          return cleanHtml.slice(0, openingIdx + 4) + '\n' + canonicalLine + '\n' + cleanHtml.slice(openingIdx + 4);
+      }
+
+      return canonicalLine + '\n' + cleanHtml;
+    }
+
+    function buildSalutation(firmName, contactName) {
+      const target = (contactName || `${firmName} team` || 'Client').trim();
+      return `<p>Dear ${escapeHtml(target)},</p>\n`;
+    }
+
+    async function loadModels() {
+      hideError();
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) { modelSelect.innerHTML = '<option value="">(Enter API key, then click Refresh models)</option>'; return; }
+      modelSelect.innerHTML = '<option value="">Loading models...</option>';
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`ListModels failed (${res.status})`);
+        const data = await res.json();
+        const models = (data.models || []).filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent')).sort((a, b) => {
+          const score = n => (n.includes('1.5') ? 2 : (n.includes('1.0') ? 1 : 0)) + (n.includes('flash') ? 0.5 : 0);
+          return score(b.name || '') - score(a.name || '');
+        });
+        if (!models.length) { modelSelect.innerHTML = '<option value="">No models available for generateContent with this key.</option>'; showError('No compatible models found. Enable Generative Language/Vertex AI and link billing.'); return; }
+        modelSelect.innerHTML = '';
+        let defaultIndex = 0;
+        models.forEach((m, idx) => {
+          const opt = document.createElement('option');
+          opt.value = m.name; opt.textContent = m.name;
+          modelSelect.appendChild(opt);
+          if (m.name.includes('gemini-1.5-flash')) defaultIndex = idx;
+        });
+        modelSelect.selectedIndex = defaultIndex;
+        modelHelp.textContent = 'Models loaded. If one fails, try another.';
+      } catch (e) {
+        showError(`Failed to load models: ${e.message}`);
+        modelSelect.innerHTML = '<option value="">(Could not load models)</option>';
+      }
+    }
+    refreshModelsBtn.addEventListener('click', loadModels);
+
+    document.getElementById('generateBtn').addEventListener('click', async () => {
+      hideError();
+      const apiKey=apiKeyInput.value.trim();
+      const modelName=modelSelect.value;
+      const strategistName=strategistNameInput.value.trim();
+      const contactName = contactNameInput.value.trim();
+      const firmName=firmNameInput.value.trim();
+      const startDate=startDateInput.value;
+      const endDate=endDateInput.value;
+      const sheetUrl=contactsUrlInput.value.trim();
+
+      if (!apiKey){ showError('Please paste your API key.'); return; }
+      if (!modelName){ showError('Please load and select a model.'); return; }
+      if (!firmName || !startDate || !endDate || !imageBase64){ showError('Please complete all fields and upload a screenshot.'); return; }
+
+      const formattedStart = new Date(startDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
+      const formattedEnd = new Date(endDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
+      const dateRange = `${formattedStart} through ${formattedEnd}`;
+
+      // Final simplified prompt with manual closing/analysis and strategist notes
+      const systemPrompt = `You are an expert digital marketing strategist for law firms. You will produce two distinct parts: a professional, client-facing email, and a separate, internal-only notes section for the strategist.
+
+PART 1: CLIENT-FACING EMAIL
+Write an email for the law firm client based on the provided SHAPE dashboard screenshot.
+- Output a valid HTML fragment only.
+- DO NOT write the "Dear..." salutation. The application will add it.
+- DO NOT write the "Insightful Analysis" or closing lines. The app will add them.
+- Use <p> and <strong> for text; <ul><li> for lists.
+- Required Structure:
+  - Opening: Start with "This report summarizes the performance of your search engine marketing campaigns for the period of ${formattedStart} through ${formattedEnd}."
+  - <p><strong>Executive Summary</strong></p>: A concise <ul> with COMBINED TOTALS for Spend, Impressions, Clicks, Conversions, Cost per conversion, CPC, and Conversion Rate.
+  - <p><strong>Performance Summary</strong></p>: A breakdown by platform (e.g., LSA, Google Ads). For each platform, list key metrics. IMPORTANT: For LSA campaigns, do NOT display CPC.
+- Tone: Confident, professional, client-focused. Do not invent data.
+
+---
+PART 2: STRATEGIST NOTES
+After the client email, add a separator "--- STRATEGIST NOTES ---" and then write a separate section with tactical, internal-only recommendations for the PPC strategist. These notes should be in ALL CAPS. Base them on all provided data. Examples: HIGH MISSED CALL RATE, SUGGESTS REVIEWING INTAKE HOURS. | CONSIDER PAUSING KEYWORD 'X' DUE TO HIGH COST.`;
+
+      const userQuery =
+`Law Firm Name: ${firmName}
+Strategist Name: ${strategistName || '(not provided)'}
+Date Range: ${dateRange}
+Google Sheets URL: ${sheetUrl || '(not provided)'}
+
+Please generate the email body content as HTML only, followed by the strategist notes as requested. Do not include the "Dear..." salutation, the Google Sheet link line, or the "Insightful Analysis" content.`;
+
+      const apiUrl=`https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      diagModel.textContent=modelName;
+      diagEndpoint.textContent=apiUrl;
+
+      const payload = {
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: userQuery }, { inlineData: { mimeType: imageMime || 'image/png', data: imageBase64 } }] }]
+      };
+
+      try {
+        setLoading(true);
+        const res = await fetch(apiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        if (!res.ok) { const err = await res.json().catch(()=>({})); const msg = err?.error?.message || `HTTP ${res.status}`; showError(`Failed to generate email. API Error: ${msg}`); return; }
+        const result = await res.json();
+        let raw = (result?.candidates?.[0]?.content?.parts || []).map(p=>p.text).filter(Boolean).join('\n').trim();
+        if (!raw) { showError('The model returned an empty response. Try another model.'); console.log('Full response:', result); return; }
+
+        let emailHtml = raw;
+        let notesHtml = '';
+        
+        const separator = /--- STRATEGIST NOTES ---/i;
+        if (separator.test(raw)) {
+          const parts = raw.split(separator);
+          emailHtml = parts[0] || '';
+          notesHtml = parts[1] || '';
+        }
+
+        emailHtml = toHtmlIfNeeded(emailHtml);
+        
+        const closingHtml = `
+          <p><strong>Insightful Analysis</strong></p>
+          <p>&nbsp;</p>
+          <p>Please let me know if you have any questions or if you would like to set up a call to go over performance.</p>
+          <p>Best Regards,</p>
+          <p>[Your Name]</p>
+        `;
+        if (!emailHtml.toLowerCase().includes('insightful analysis')) {
+            emailHtml += '\n' + closingHtml;
+        }
+
+        emailHtml = injectSheetLink(emailHtml, sheetUrl);
+        emailHtml = applyStrategistName(emailHtml, strategistName);
+        emailHtml = buildSalutation(firmName, contactName) + emailHtml;
+        
+        emailOutput.innerHTML = emailHtml;
+        
+        if (notesHtml.trim()) {
+          strategistNotesOutput.innerHTML = toHtmlIfNeeded(notesHtml).toUpperCase();
+          strategistNotesContainer.classList.remove('hidden');
+        } else {
+          strategistNotesContainer.classList.add('hidden');
+        }
+
+        outputDiv.classList.remove('hidden');
+      } catch(e) {
+        showError('Network/Request error: ' + e.message);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    // Copy
+    document.getElementById('copyBtn').addEventListener('click', async () => {
+      const html = emailOutput.innerHTML;
+      try {
+        const blob = new Blob([html], { type: 'text/html' });
+        const item = new ClipboardItem({ 'text/html': blob });
+        await navigator.clipboard.write([item]);
+        const tip = document.getElementById('copyTooltip');
+        tip.textContent = 'Copied!';
+        setTimeout(() => tip.textContent = 'Copy to clipboard', 2000);
+      } catch {
+        await navigator.clipboard.writeText(emailOutput.innerText);
+      }
+    });
+  </script>
+</body>
+</html>
