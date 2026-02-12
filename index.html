@@ -262,6 +262,21 @@
       return html;
     }
 
+    // LSA-enforcement: remove CPC/CPA and relabel Conversions->Leads, Conversion Rate->Lead Rate inside LSA blocks
+    function enforceLsaNoCpcCpa(html) {
+      const re = /(<p><strong>[^<]*\b(LSA|Local Service Ads)\b[^<]*<\/strong><\/p>[\s\S]*?<ul>[\s\S]*?<\/ul>)/gi;
+      return html.replace(re, (block) => {
+        let updated = block
+          .replace(/<li>[^<]*\bCPC\b[^<]*<\/li>/gi, '')
+          .replace(/<li>[^<]*\b(CPA|Cost\s*per\s*conversion)\b[^<]*<\/li>/gi, '')
+          .replace(/(<li>\s*)(Conversions?|Conv\.?)\s*:/gi, '$1Leads:')
+          .replace(/(<li>\s*)Conversion\s*Rate\s*:/gi, '$1Lead Rate:');
+        // clean up double blank lines or empty <ul></ul> artifacts if any
+        updated = updated.replace(/<ul>\s*<\/ul>/gi, '');
+        return updated;
+      });
+    }
+
     function applyStrategistName(html, name) {
       const n = (name || '').trim();
       return n ? html.replace(/\[Your Name\]/g, escapeHtml(n)) : html;
@@ -281,12 +296,10 @@
       if (psIdx !== -1) {
           return cleanHtml.slice(0, psIdx) + canonicalLine + '\n' + cleanHtml.slice(psIdx);
       }
-      
       const openingIdx = cleanHtml.toLowerCase().indexOf('</p>');
       if (openingIdx !== -1) {
           return cleanHtml.slice(0, openingIdx + 4) + '\n' + canonicalLine + '\n' + cleanHtml.slice(openingIdx + 4);
       }
-
       return canonicalLine + '\n' + cleanHtml;
     }
 
@@ -296,7 +309,6 @@
     }
 
     async function loadModels() {
-      hideError();
       const apiKey = apiKeyInput.value.trim();
       if (!apiKey) { modelSelect.innerHTML = '<option value="">(Enter API key, then click Refresh models)</option>'; return; }
       modelSelect.innerHTML = '<option value="">Loading models...</option>';
@@ -305,11 +317,13 @@
         const res = await fetch(url);
         if (!res.ok) throw new Error(`ListModels failed (${res.status})`);
         const data = await res.json();
-        const models = (data.models || []).filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent')).sort((a, b) => {
-          const score = n => (n.includes('1.5') ? 2 : (n.includes('1.0') ? 1 : 0)) + (n.includes('flash') ? 0.5 : 0);
-          return score(b.name || '') - score(a.name || '');
-        });
-        if (!models.length) { modelSelect.innerHTML = '<option value="">No models available for generateContent with this key.</option>'; showError('No compatible models found. Enable Generative Language/Vertex AI and link billing.'); return; }
+        const models = (data.models || [])
+          .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+          .sort((a, b) => {
+            const score = n => (n.includes('1.5') ? 2 : (n.includes('1.0') ? 1 : 0)) + (n.includes('flash') ? 0.5 : 0);
+            return score(b.name || '') - score(a.name || '');
+          });
+        if (!models.length) { modelSelect.innerHTML = '<option value="">No models available for generateContent with this key.</option>'; showError('No compatible models found.'); return; }
         modelSelect.innerHTML = '';
         let defaultIndex = 0;
         models.forEach((m, idx) => {
@@ -328,7 +342,9 @@
     refreshModelsBtn.addEventListener('click', loadModels);
 
     document.getElementById('generateBtn').addEventListener('click', async () => {
-      hideError();
+      // Reset error
+      errorMessage.classList.add('hidden');
+
       const apiKey=apiKeyInput.value.trim();
       const modelName=modelSelect.value;
       const strategistName=strategistNameInput.value.trim();
@@ -346,19 +362,23 @@
       const formattedEnd = new Date(endDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
       const dateRange = `${formattedStart} through ${formattedEnd}`;
 
-      // Final simplified prompt with manual closing/analysis and strategist notes
+      // UPDATED PROMPT with LSA rules for CPC/CPA removal and Leads/Lead Rate
       const systemPrompt = `You are an expert digital marketing strategist for law firms. You will produce two distinct parts: a professional, client-facing email, and a separate, internal-only notes section for the strategist.
 
 PART 1: CLIENT-FACING EMAIL
 Write an email for the law firm client based on the provided SHAPE dashboard screenshot.
 - Output a valid HTML fragment only.
 - DO NOT write the "Dear..." salutation. The application will add it.
-- DO NOT write the "Insightful Analysis" or closing lines. The app will add them.
+- DO NOT write the "Insightful Analysis" or closing lines. The application will add them.
 - Use <p> and <strong> for text; <ul><li> for lists.
-- Required Structure:
-  - Opening: Start with "This report summarizes the performance of your search engine marketing campaigns for the period of ${formattedStart} through ${formattedEnd}."
-  - <p><strong>Executive Summary</strong></p>: A concise <ul> with COMBINED TOTALS for Spend, Impressions, Clicks, Conversions, Cost per conversion, CPC, and Conversion Rate.
-  - <p><strong>Performance Summary</strong></p>: A breakdown by platform (e.g., LSA, Google Ads). For each platform, list key metrics. IMPORTANT: For LSA campaigns, do NOT display CPC.
+
+Required Structure:
+- Opening: Start with "This report summarizes the performance of your search engine marketing campaigns for the period of ${formattedStart} through ${formattedEnd}."
+- <p><strong>Executive Summary</strong></p>: A concise <ul> with COMBINED TOTALS for Spend, Impressions, Clicks, Conversions (or Leads if LSA is present), and Conversion Rate (or Lead Rate if LSA is present). If any LSA data appears on the screenshot, OMIT CPC and Cost per conversion (CPA) from this section, and prefer Leads/Lead Rate.
+- <p><strong>Performance Summary</strong></p>: A breakdown by platform (e.g., LSA, Google Ads, Microsoft Ads). For each platform, list key metrics. IMPORTANT for LSA (Local Services Ads):
+  • DO NOT display CPC or Cost per conversion (CPA).
+  • Label “Conversions” as “Leads”.
+  • Prefer “Lead Rate” over “Conversion Rate” where visible.
 - Tone: Confident, professional, client-focused. Do not invent data.
 
 ---
@@ -385,40 +405,48 @@ Please generate the email body content as HTML only, followed by the strategist 
       try {
         setLoading(true);
         const res = await fetch(apiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-        if (!res.ok) { const err = await res.json().catch(()=>({})); const msg = err?.error?.message || `HTTP ${res.status}`; showError(`Failed to generate email. API Error: ${msg}`); return; }
+        if (!res.ok) {
+          const err = await res.json().catch(()=>({}));
+          const msg = err?.error?.message || `HTTP ${res.status}`;
+          showError(`Failed to generate email. API Error: ${msg}`);
+          return;
+        }
         const result = await res.json();
         let raw = (result?.candidates?.[0]?.content?.parts || []).map(p=>p.text).filter(Boolean).join('\n').trim();
         if (!raw) { showError('The model returned an empty response. Try another model.'); console.log('Full response:', result); return; }
 
-        let emailHtml = raw;
-        let notesHtml = '';
-        
-        const separator = /--- STRATEGIST NOTES ---/i;
-        if (separator.test(raw)) {
-          const parts = raw.split(separator);
-          emailHtml = parts[0] || '';
-          notesHtml = parts[1] || '';
+        let emailHtml = toHtmlIfNeeded(raw);
+
+        // Enforce LSA rules post-generation (belt & suspenders)
+        emailHtml = enforceLsaNoCpcCpa(emailHtml);
+
+        // Add placeholder Insightful Analysis + closing if missing
+        const lc = emailHtml.toLowerCase();
+        if (!lc.includes('insightful analysis') && !lc.includes('best regards')) {
+          const closingHtml = `
+            <p><strong>Insightful Analysis</strong></p>
+            <p>&nbsp;</p>
+            <p>Please let me know if you have any questions or if you would like to set up a call to go over performance.</p>
+            <p>Best Regards,</p>
+            <p>[Your Name]</p>
+          `;
+          emailHtml += '\n' + closingHtml;
         }
 
-        emailHtml = toHtmlIfNeeded(emailHtml);
-        
-        const closingHtml = `
-          <p><strong>Insightful Analysis</strong></p>
-          <p>&nbsp;</p>
-          <p>Please let me know if you have any questions or if you would like to set up a call to go over performance.</p>
-          <p>Best Regards,</p>
-          <p>[Your Name]</p>
-        `;
-        if (!emailHtml.toLowerCase().includes('insightful analysis')) {
-            emailHtml += '\n' + closingHtml;
-        }
-
+        // Inject sheet link, name, salutation
         emailHtml = injectSheetLink(emailHtml, sheetUrl);
         emailHtml = applyStrategistName(emailHtml, strategistName);
         emailHtml = buildSalutation(firmName, contactName) + emailHtml;
         
         emailOutput.innerHTML = emailHtml;
-        
+
+        // Strategist notes handling
+        let notesHtml = '';
+        const sep = /--- STRATEGIST NOTES ---/i;
+        if (sep.test(raw)) {
+          const parts = raw.split(sep);
+          notesHtml = parts[1] || '';
+        }
         if (notesHtml.trim()) {
           strategistNotesOutput.innerHTML = toHtmlIfNeeded(notesHtml).toUpperCase();
           strategistNotesContainer.classList.remove('hidden');
