@@ -20,9 +20,6 @@
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
     input[type="date"]::-webkit-calendar-picker-indicator { cursor:pointer; opacity:.6; transition:opacity .2s; }
     input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:1; }
-    #dropzone.dragover { border-color: #3b82f6; }
-    #dropzone.ready { border-color: #10b981; }
-    details > summary { cursor: pointer; }
     #emailOutput p, #strategistNotesOutput p { margin: 0 0 0.75rem 0; }
     #emailOutput ul, #strategistNotesOutput ul { margin: 0 0 1rem 1.25rem; list-style: disc; }
     #emailOutput li, #strategistNotesOutput li { margin: 0.25rem 0; }
@@ -112,10 +109,14 @@
 
       <!-- Step 3 -->
       <div>
-        <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Step 3: Google Sheets Link</h2>
+        <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Step 3: Links</h2>
         <div class="mb-3">
           <label for="contactsUrl" class="block text-sm font-medium text-gray-700 mb-1">Google Sheets URL</label>
           <input type="url" id="contactsUrl" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Paste share link to add it to the email">
+        </div>
+        <div class="mb-3">
+          <label for="lsaUrl" class="block text-sm font-medium text-gray-700 mb-1">LSA 60-Day Report URL</label>
+          <input type="url" id="lsaUrl" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Paste LSA 60-day report link to add it to the email">
         </div>
       </div>
 
@@ -186,6 +187,7 @@
     const imagePreview = document.getElementById('image-preview');
 
     const contactsUrlInput = document.getElementById('contactsUrl');
+    const lsaUrlInput = document.getElementById('lsaUrl');
 
     const generateBtn = document.getElementById('generateBtn');
     const loadingSpinner = document.getElementById('loading-spinner');
@@ -214,7 +216,6 @@
     window.addEventListener('load', () => {
       const savedApiKey = localStorage.getItem('ppcGeneratorApiKey');
       if (savedApiKey) { apiKeyInput.value = savedApiKey; loadModels(); }
-      
       const savedStrategistName = localStorage.getItem('ppcGeneratorStrategistName');
       if (savedStrategistName) { strategistNameInput.value = savedStrategistName; }
     });
@@ -279,30 +280,66 @@
 
     // Safety: if the model embedded a visible "Strategist Notes" block in the email HTML, strip it
     function stripEmbeddedStrategistNotes(html) {
-      // Remove from a heading/paragraph that contains STRATEGIST NOTES to the end
       const re = /<p[^>]*>\s*<strong>\s*strategist\s+notes\s*<\/strong>\s*<\/p>[\s\S]*$/i;
       return html.replace(re, '');
     }
 
-    // Build salutation, insert sheet link, apply name
     function applyStrategistName(html, name) {
       const n = (name || '').trim();
       return n ? html.replace(/\[Your Name\]/g, escapeHtml(n)) : html;
     }
+
     function injectSheetLink(html, url) {
       const contactsLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/gi;
       let cleanHtml = html.replace(contactsLineRe, '');
       if (!url) return cleanHtml;
+
       let safe = url.trim();
       if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
       const anchor = `<a href="${safe}" target="_blank" rel="noopener noreferrer">Google Sheet</a>`;
       const canonicalLine = `<p>The following link is for your ppc contacts for the period - ${anchor}</p>`;
+      
       const psIdx = cleanHtml.toLowerCase().indexOf('<p><strong>executive summary');
-      if (psIdx !== -1) return cleanHtml.slice(0, psIdx) + canonicalLine + '\n' + cleanHtml.slice(psIdx);
+      if (psIdx !== -1) {
+          return cleanHtml.slice(0, psIdx) + canonicalLine + '\n' + cleanHtml.slice(psIdx);
+      }
+      
       const openingIdx = cleanHtml.toLowerCase().indexOf('</p>');
-      if (openingIdx !== -1) return cleanHtml.slice(0, openingIdx + 4) + '\n' + canonicalLine + '\n' + cleanHtml.slice(openingIdx + 4);
+      if (openingIdx !== -1) {
+          return cleanHtml.slice(0, openingIdx + 4) + '\n' + canonicalLine + '\n' + cleanHtml.slice(openingIdx + 4);
+      }
+
       return canonicalLine + '\n' + cleanHtml;
     }
+
+    // New: Inject LSA 60-Day link
+    function injectLsaReportLink(html, url) {
+      const lsaLineRe = /<p[^>]*>[\s\S]*?lsa\s*60[- ]day\s*report[\s\S]*?<\/p>/gi;
+      let clean = html.replace(lsaLineRe, '');
+      if (!url) return clean;
+
+      let safe = url.trim();
+      if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
+      const anchor = `<a href="${safe}" target="_blank" rel="noopener noreferrer">LSA 60-day report</a>`;
+      const canonical = `<p>The following link is for your LSA 60-day report - ${anchor}</p>`;
+
+      // If the Sheet link exists, place this right after it
+      const sheetLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/i;
+      const m = clean.match(sheetLineRe);
+      if (m) {
+        return clean.replace(sheetLineRe, m[0] + '\n' + canonical);
+      }
+
+      // Else, same placement strategy as the Sheet link
+      const psIdx = clean.toLowerCase().indexOf('<p><strong>executive summary');
+      if (psIdx !== -1) return clean.slice(0, psIdx) + canonical + '\n' + clean.slice(psIdx);
+
+      const openingIdx = clean.toLowerCase().indexOf('</p>');
+      if (openingIdx !== -1) return clean.slice(0, openingIdx + 4) + '\n' + canonical + '\n' + clean.slice(openingIdx + 4);
+
+      return canonical + '\n' + clean;
+    }
+
     function buildSalutation(firmName, contactName) {
       const target = (contactName || `${firmName} team` || 'Client').trim();
       return `<p>Dear ${escapeHtml(target)},</p>\n`;
@@ -353,6 +390,7 @@
       const startDate=startDateInput.value;
       const endDate=endDateInput.value;
       const sheetUrl=contactsUrlInput.value.trim();
+      const lsaUrl=lsaUrlInput.value.trim();
 
       if (!apiKey){ showError('Please paste your API key.'); return; }
       if (!modelName){ showError('Please load and select a model.'); return; }
@@ -367,6 +405,7 @@ PART 1: CLIENT-FACING EMAIL
 Write an email for the law firm client based on the provided SHAPE dashboard screenshot.
 - Output a valid HTML fragment only.
 - DO NOT write the "Dear..." salutation. The application will add it.
+- DO NOT write the link lines (Google Sheets or LSA 60-day report). The application will add them.
 - DO NOT write the "Insightful Analysis" or closing lines. The application will add them.
 - Use <p> and <strong> for text; <ul><li> for lists.
 
@@ -387,7 +426,8 @@ After the client email, add a separator "--- STRATEGIST NOTES ---" and then writ
 `Law Firm Name: ${firmName}
 Strategist Name: ${strategistName || '(not provided)'}
 Google Sheets URL: ${sheetUrl || '(not provided)'}
-Please generate the email body content as HTML only, followed by the strategist notes as requested. Do not include the "Dear..." salutation, the Google Sheet link line, or the "Insightful Analysis" content.`;
+LSA 60-Day Report URL: ${lsaUrl || '(not provided)'}
+Please generate the email body content as HTML only, followed by the strategist notes as requested. Do not include the "Dear..." salutation, the link lines, or the "Insightful Analysis" content.`;
 
       const apiUrl=`https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
       diagModel.textContent=modelName;
@@ -411,7 +451,7 @@ Please generate the email body content as HTML only, followed by the strategist 
         let raw = (result?.candidates?.[0]?.content?.parts || []).map(p=>p.text).filter(Boolean).join('\n').trim();
         if (!raw) { showError('The model returned an empty response. Try another model.'); console.log('Full response:', result); return; }
 
-        // 1) Split raw into email part and notes part BEFORE converting to HTML (prevents duplication)
+        // Split email vs strategist notes BEFORE converting to HTML
         let emailPart = raw;
         let notesPart = '';
         const sepRe = /(?:^|\r?\n)\s*[-–—]{2,}\s*STRATEGIST\s+NOTES\s*[-–—]*\s*(?:\r?\n|$)/i;
@@ -420,12 +460,12 @@ Please generate the email body content as HTML only, followed by the strategist 
           emailPart = pieces[0] || '';
           notesPart = pieces.slice(1).join('\n');
         }
-        // 2) Convert email HTML and enforce LSA rules
+
         let emailHtml = toHtmlIfNeeded(emailPart);
         emailHtml = enforceLsaNoCpcCpa(emailHtml);
-        emailHtml = stripEmbeddedStrategistNotes(emailHtml); // safety
+        emailHtml = stripEmbeddedStrategistNotes(emailHtml);
 
-        // 3) Add placeholder Insightful Analysis + closing if missing
+        // Add placeholder Insightful Analysis + closing if missing
         const lc = emailHtml.toLowerCase();
         if (!lc.includes('insightful analysis') && !lc.includes('best regards')) {
           const closingHtml = `
@@ -438,13 +478,15 @@ Please generate the email body content as HTML only, followed by the strategist 
           emailHtml += '\n' + closingHtml;
         }
 
-        // 4) Inject sheet link, strategist name, salutation
+        // Inject links, strategist name, salutation
         emailHtml = injectSheetLink(emailHtml, sheetUrl);
+        emailHtml = injectLsaReportLink(emailHtml, lsaUrl);
         emailHtml = applyStrategistName(emailHtml, strategistName);
         emailHtml = buildSalutation(firmName, contactName) + emailHtml;
+
         emailOutput.innerHTML = emailHtml;
 
-        // 5) Render notes (uppercase) if provided
+        // Notes box
         if (notesPart.trim()) {
           strategistNotesOutput.innerHTML = toHtmlIfNeeded(notesPart).toUpperCase();
           strategistNotesContainer.classList.remove('hidden');
