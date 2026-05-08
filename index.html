@@ -253,7 +253,7 @@
       return html;
     }
 
-    // LSA enforcement: remove CPC/CPA, relabel Conversions->Leads, Conversion Rate->Lead Rate inside LSA blocks
+    // LSA enforcement
     function enforceLsaNoCpcCpa(html) {
       const re = /(<p><strong>[^<]*\b(LSA|Local Service Ads)\b[^<]*<\/strong><\/p>[\s\S]*?<ul>[\s\S]*?<\/ul>)/gi;
       return html.replace(re, (block) => {
@@ -314,7 +314,7 @@
       return `<p>Dear ${escapeHtml(target)},</p>\n`;
     }
 
-    // Load models: show stable, multimodal general-use Gemini models; hide previews/robotics
+    // Load models: include Gemini 2.0; fallback to all generateContent if "stable" filter finds none
     async function loadModels() {
       hideError();
       const apiKey = apiKeyInput.value.trim();
@@ -326,45 +326,56 @@
         if (!res.ok) throw new Error(`ListModels failed (${res.status})`);
         const data = await res.json();
 
-        const keep = (n) => {
-          const s = (n || '').toLowerCase();
-          const isGen = /gemini-(1\.5|1\.0)/.test(s);
-          const isGeneral = /(flash|pro)/.test(s);
+        const all = (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent'));
+
+        const stable = all.filter(m => {
+          const s = (m.name || '').toLowerCase();
+          const familyOk = /gemini-(2\.0|1\.5|1\.0)/.test(s);
+          const generalOk = /(flash-8b|flash|pro|pro-vision)/.test(s);
           const notPreview = !/(preview|exp|experimental)/.test(s);
           const notRobotics = !/robot/.test(s);
-          return isGen && isGeneral && notPreview && notRobotics;
-        };
+          return familyOk && generalOk && notPreview && notRobotics;
+        });
 
-        const models = (data.models || [])
-          .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-          .filter(m => keep(m.name))
-          .sort((a, b) => {
-            const score = (n) => {
-              const s = (n || '').toLowerCase();
-              return (s.includes('1.5') ? 20 : 10)
-                   + (s.includes('flash') ? 3 : 0)
-                   + (s.includes('pro') ? 2 : 0);
-            };
-            return score(b.name) - score(a.name);
-          });
-
+        let models = stable.length ? stable : all;
         if (!models.length) {
-          modelSelect.innerHTML = '<option value="">No stable multimodal models found for this key.</option>';
-          showError('No compatible models found. Ensure your key has access to Gemini models (try AI Studio keys).');
+          modelSelect.innerHTML = '<option value="">No models returned for this key.</option>';
+          showError('No models returned. Confirm this is a Google AI Studio key and that the Generative Language (Gemini) API is enabled.');
           return;
         }
 
+        // Sort preference: 2.0 flash, then 1.5 flash, then 1.5 pro, then others
+        const score = (n) => {
+          const s = (n || '').toLowerCase();
+          return (s.includes('gemini-2.0') ? 300 : s.includes('gemini-1.5') ? 200 : 100)
+               + (s.includes('flash-8b') ? 40 : 0)
+               + (s.includes('flash') ? 30 : 0)
+               + (s.includes('pro') ? 20 : 0);
+        };
+        models.sort((a, b) => score(b.name) - score(a.name));
+
         modelSelect.innerHTML = '';
-        let defaultIndex = 0;
-        models.forEach((m, idx) => {
+        models.forEach((m) => {
           const opt = document.createElement('option');
           opt.value = m.name;
           opt.textContent = m.name;
           modelSelect.appendChild(opt);
-          if (m.name.includes('gemini-1.5-flash')) defaultIndex = idx;
         });
+
+        // Default to 2.0 flash if present, else 1.5 flash, else 1.5 pro, else first
+        let defaultIndex = 0;
+        models.forEach((m, idx) => { if (/gemini-2\.0.*flash/i.test(m.name)) defaultIndex = idx; });
+        if (!/gemini-2\.0.*flash/i.test(models[defaultIndex]?.name || '')) {
+          models.forEach((m, idx) => { if (/gemini-1\.5.*flash/i.test(m.name)) defaultIndex = idx; });
+        }
+        if (!/gemini-(2\.0|1\.5).*flash/i.test(models[defaultIndex]?.name || '')) {
+          models.forEach((m, idx) => { if (/gemini-1\.5.*pro/i.test(m.name)) defaultIndex = idx; });
+        }
         modelSelect.selectedIndex = defaultIndex;
-        modelHelp.textContent = 'Models loaded. If one fails, the app will auto-switch to a stable fallback.';
+
+        modelHelp.textContent = stable.length
+          ? 'Models loaded. If one fails, the app will auto-switch to a stable fallback.'
+          : 'Showing all compatible models (some may be preview). If one fails, switch to another.';
       } catch (e) {
         showError(`Failed to load models: ${e.message}`);
         modelSelect.innerHTML = '<option value="">(Could not load models)</option>';
@@ -480,7 +491,7 @@ Please generate the email body content as HTML only, followed by the strategist 
           if (isRetiredModelError(err, res.status)) {
             const options = Array.from(modelSelect.options).map(o=>o.value);
             const candidates = options.filter(v => v !== modelName);
-            const pick = candidates.find(v=>/gemini-1\.5.*flash/i.test(v))
+            const pick = candidates.find(v=>/gemini-(2\.0|1\.5).*flash/i.test(v))
                       || candidates.find(v=>/gemini-1\.5.*pro/i.test(v))
                       || candidates[0];
 
