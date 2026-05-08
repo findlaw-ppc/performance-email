@@ -76,7 +76,7 @@
             <select id="modelSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
               <option value="">(Load models using your API key)</option>
             </select>
-            <p id="modelHelp" class="text-xs text-gray-500 mt-1">Tip: Try models/gemini-1.5-flash first.</p>
+            <p id="modelHelp" class="text-xs text-gray-500 mt-1">Tip: Try the selected model first.</p>
           </div>
 
           <div class="md:col-span-2">
@@ -197,38 +197,30 @@
     const refreshModelsBtn = document.getElementById('refreshModelsBtn');
     const modelSelect = document.getElementById('modelSelect');
     const modelHelp = document.getElementById('modelHelp');
-
     const strategistNameInput = document.getElementById('strategistName');
     const contactNameInput = document.getElementById('contactName');
     const firmNameInput = document.getElementById('firmName');
     const startDateInput = document.getElementById('startDate');
     const endDateInput = document.getElementById('endDate');
-
     const dropzone = document.getElementById('dropzone');
     const fileHidden = document.getElementById('fileHidden');
     const fileNameDisplay = document.getElementById('fileName');
     const imagePreviewContainer = document.getElementById('image-preview-container');
     const imagePreview = document.getElementById('image-preview');
-
     const contactsUrlInput = document.getElementById('contactsUrl');
     const lsaUrlInput = document.getElementById('lsaUrl');
-
     const generateBtn = document.getElementById('generateBtn');
     const loadingSpinner = document.getElementById('loading-spinner');
     const buttonText = document.getElementById('button-text');
     const outputDiv = document.getElementById('output');
     const emailOutput = document.getElementById('emailOutput');
-
     const strategistNotesContainer = document.getElementById('strategistNotesContainer');
     const strategistNotesOutput = document.getElementById('strategistNotesOutput');
-
     const errorMessage = document.getElementById('error-message');
     const errorText = document.getElementById('error-text');
-
     const diagModel = document.getElementById('diagModel');
     const diagEndpoint = document.getElementById('diagEndpoint');
     const diagMime = document.getElementById('diagMime');
-
     let imageBase64 = null;
     let imageMime = null;
 
@@ -253,7 +245,7 @@
       return html;
     }
 
-    // LSA enforcement
+    // Post-processing
     function enforceLsaNoCpcCpa(html) {
       const re = /(<p><strong>[^<]*\b(LSA|Local Service Ads)\b[^<]*<\/strong><\/p>[\s\S]*?<ul>[\s\S]*?<\/ul>)/gi;
       return html.replace(re, (block) => {
@@ -262,20 +254,17 @@
           .replace(/<li>[^<]*\b(CPA|Cost\s*per\s*conversion)\b[^<]*<\/li>/gi, '')
           .replace(/(<li>\s*)(Conversions?|Conv\.?)\s*:/gi, '$1Leads:')
           .replace(/(<li>\s*)Conversion\s*Rate\s*:/gi, '$1Lead Rate:');
-        updated = updated.replace(/<ul>\s*<\/ul>/gi, '');
-        return updated;
+        return updated.replace(/<ul>\s*<\/ul>/gi, '');
       });
     }
-
     function stripEmbeddedStrategistNotes(html) {
       const re = /<p[^>]*>\s*<strong>\s*strategist\s+notes\s*<\/strong>\s*<\/p>[\s\S]*$/i;
       return html.replace(re, '');
     }
 
-    // Link injectors
+    // Injectors & Builders
     function injectSheetLink(html, url) {
-      const contactsLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/gi;
-      let cleanHtml = html.replace(contactsLineRe, '');
+      let cleanHtml = html.replace(/<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/gi, '');
       if (!url) return cleanHtml;
       let safe = url.trim();
       if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
@@ -288,8 +277,7 @@
       return line + '\n' + cleanHtml;
     }
     function injectLsaReportLink(html, url) {
-      const lsaLineRe = /<p[^>]*>[\s\S]*?lsa\s*60[- ]day\s*report[\s\S]*?<\/p>/gi;
-      let clean = html.replace(lsaLineRe, '');
+      let clean = html.replace(/<p[^>]*>[\s\S]*?lsa\s*60[- ]day\s*report[\s\S]*?<\/p>/gi, '');
       if (!url) return clean;
       let safe = url.trim();
       if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
@@ -304,7 +292,6 @@
       if (openingIdx !== -1) return clean.slice(0, openingIdx + 4) + '\n' + line + '\n' + clean.slice(openingIdx + 4);
       return line + '\n' + clean;
     }
-
     function applyStrategistName(html, name) {
       const n = (name || '').trim();
       return n ? html.replace(/\[Your Name\]/g, escapeHtml(n)) : html;
@@ -314,7 +301,7 @@
       return `<p>Dear ${escapeHtml(target)},</p>\n`;
     }
 
-    // Load models: include Gemini 2.0; fallback to all generateContent if "stable" filter finds none
+    // Load models: include Gemini 2.x; fallback to all `generateContent` models
     async function loadModels() {
       hideError();
       const apiKey = apiKeyInput.value.trim();
@@ -330,11 +317,9 @@
 
         const stable = all.filter(m => {
           const s = (m.name || '').toLowerCase();
-          const familyOk = /gemini-(2\.0|1\.5|1\.0)/.test(s);
-          const generalOk = /(flash-8b|flash|pro|pro-vision)/.test(s);
-          const notPreview = !/(preview|exp|experimental)/.test(s);
-          const notRobotics = !/robot/.test(s);
-          return familyOk && generalOk && notPreview && notRobotics;
+          const familyOk = /gemini-(3\.1|3\.0|2\.5|2\.0|1\.5|1\.0)/.test(s);
+          const generalOk = /(flash|pro)/.test(s);
+          return familyOk && generalOk && !/preview|exp|robotics|tts|image|audio|research|lyria|veo/i.test(s);
         });
 
         let models = stable.length ? stable : all;
@@ -344,13 +329,9 @@
           return;
         }
 
-        // Sort preference: 2.0 flash, then 1.5 flash, then 1.5 pro, then others
-        const score = (n) => {
+        const score = n => {
           const s = (n || '').toLowerCase();
-          return (s.includes('gemini-2.0') ? 300 : s.includes('gemini-1.5') ? 200 : 100)
-               + (s.includes('flash-8b') ? 40 : 0)
-               + (s.includes('flash') ? 30 : 0)
-               + (s.includes('pro') ? 20 : 0);
+          return (s.includes('gemini-3.1') ? 500 : s.includes('gemini-3.0') ? 400 : s.includes('gemini-2.5') ? 300 : s.includes('gemini-2.0') ? 250 : s.includes('gemini-1.5') ? 200 : 100) + (s.includes('flash') ? 30 : 20);
         };
         models.sort((a, b) => score(b.name) - score(a.name));
 
@@ -361,17 +342,7 @@
           opt.textContent = m.name;
           modelSelect.appendChild(opt);
         });
-
-        // Default to 2.0 flash if present, else 1.5 flash, else 1.5 pro, else first
-        let defaultIndex = 0;
-        models.forEach((m, idx) => { if (/gemini-2\.0.*flash/i.test(m.name)) defaultIndex = idx; });
-        if (!/gemini-2\.0.*flash/i.test(models[defaultIndex]?.name || '')) {
-          models.forEach((m, idx) => { if (/gemini-1\.5.*flash/i.test(m.name)) defaultIndex = idx; });
-        }
-        if (!/gemini-(2\.0|1\.5).*flash/i.test(models[defaultIndex]?.name || '')) {
-          models.forEach((m, idx) => { if (/gemini-1\.5.*pro/i.test(m.name)) defaultIndex = idx; });
-        }
-        modelSelect.selectedIndex = defaultIndex;
+        modelSelect.selectedIndex = 0; // The highest scored is the new default
 
         modelHelp.textContent = stable.length
           ? 'Models loaded. If one fails, the app will auto-switch to a stable fallback.'
@@ -393,7 +364,7 @@
         const m=dataUrl.match(/^data:(.*?);base64,(.*)$/);
         if(m){ imageMime=m[1]||'image/png'; imageBase64=m[2]; } else { imageMime=file.type||'image/png'; imageBase64=dataUrl.split(',')[1]; }
         fileNameDisplay.textContent = `SHAPE file: ${file.name}`;
-        imagePreview.src=`data:${imageMime};base64,${imageBase64}`;
+        imagePreview.src=`data:$${imageMime};base64,$${imageBase64}`;
         imagePreviewContainer.classList.remove('hidden');
         diagMime.textContent=imageMime;
       };
@@ -415,7 +386,7 @@
       return status === 404 || /no longer available|not found|invalid model|unsupported model/.test(msg);
     }
     async function callModel(modelName, payload, apiKey) {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/$${modelName}:generateContent?key=$${encodeURIComponent(apiKey)}`;
       diagModel.textContent = modelName;
       diagEndpoint.textContent = apiUrl;
       const res = await fetch(apiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -424,7 +395,6 @@
 
     document.getElementById('generateBtn').addEventListener('click', async () => {
       hideError();
-
       const apiKey=apiKeyInput.value.trim();
       let modelName=modelSelect.value;
       const strategistName=strategistNameInput.value.trim();
@@ -435,26 +405,22 @@
       const sheetUrl=(contactsUrlInput.value || '').trim();
       const lsaUrl=(lsaUrlInput.value || '').trim();
 
-      if (!apiKey){ showError('Please paste your API key.'); return; }
-      if (!modelName){ showError('Please load and select a model.'); return; }
-      if (!firmName || !startDate || !endDate || !imageBase64){ showError('Please complete all fields and upload a screenshot.'); return; }
+      if (!apiKey || !modelName || !firmName || !startDate || !endDate || !imageBase64){ showError('Please complete all required fields and upload a screenshot.'); return; }
 
       const formattedStart = new Date(startDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
       const formattedEnd = new Date(endDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
-      const dateRange = `${formattedStart} through ${formattedEnd}`;
+      const dateRange = `$${formattedStart} through $${formattedEnd}`;
 
       const systemPrompt = `You are an expert digital marketing strategist for law firms. You will produce two distinct parts: a professional, client-facing email, and a separate, internal-only notes section for the strategist.
 
 PART 1: CLIENT-FACING EMAIL
 Write an email for the law firm client based on the provided SHAPE dashboard screenshot.
 - Output a valid HTML fragment only.
-- DO NOT write the "Dear..." salutation. The application will add it.
-- DO NOT write the link lines (Google Sheets or LSA 60-day report). The application will add them.
-- DO NOT write the "Insightful Analysis" or closing lines. The application will add them.
+- DO NOT write the "Dear..." salutation, link lines, "Insightful Analysis", or closing lines. The application will add them.
 - Use <p> and <strong> for text; <ul><li> for lists.
 
 Required Structure:
-- Opening: Start with "This report summarizes the performance of your search engine marketing campaigns for the period of ${formattedStart} through ${formattedEnd}."
+- Opening: Start with "This report summarizes the performance of your search engine marketing campaigns for the period of $${formattedStart} through $${formattedEnd}."
 - <p><strong>Executive Summary</strong></p>: A concise <ul> with COMBINED TOTALS for Spend, Impressions, Clicks, Conversions (or Leads if LSA is present), and Conversion Rate (or Lead Rate if LSA is present). If any LSA data appears on the screenshot, OMIT CPC and Cost per conversion (CPA) here, and prefer Leads/Lead Rate.
 - <p><strong>Performance Summary</strong></p>: A breakdown by platform (e.g., LSA, Google Ads, Microsoft Ads). For each platform, list key metrics. IMPORTANT for LSA (Local Services Ads):
   • DO NOT display CPC or Cost per conversion (CPA).
@@ -466,13 +432,7 @@ Required Structure:
 PART 2: STRATEGIST NOTES
 After the client email, add a separator "--- STRATEGIST NOTES ---" and then write a separate section with tactical, internal-only recommendations for the PPC strategist. These notes should be in ALL CAPS. Base them on all provided data.`;
 
-      const userQuery =
-`Law Firm Name: ${firmName}
-Strategist Name: ${strategistName || '(not provided)'}
-Date Range: ${dateRange}
-Google Sheets URL: ${sheetUrl || '(not provided)'}
-LSA 60-Day Report URL: ${lsaUrl || '(not provided)'}
-Please generate the email body content as HTML only, followed by the strategist notes as requested. Do not include the "Dear..." salutation, the link lines, or the "Insightful Analysis" content.`;
+      const userQuery = `Generate email and notes for $${firmName} ($${dateRange}).`;
 
       const payload = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -482,22 +442,17 @@ Please generate the email body content as HTML only, followed by the strategist 
       try {
         setLoading(true);
 
-        // 1) Try selected model
         let res = await callModel(modelName, payload, apiKey);
 
-        // 2) If retired/not found, auto-switch to next best and retry once
         if (!res.ok) {
           const err = await res.json().catch(()=>({}));
           if (isRetiredModelError(err, res.status)) {
             const options = Array.from(modelSelect.options).map(o=>o.value);
             const candidates = options.filter(v => v !== modelName);
-            const pick = candidates.find(v=>/gemini-(2\.0|1\.5).*flash/i.test(v))
-                      || candidates.find(v=>/gemini-1\.5.*pro/i.test(v))
-                      || candidates[0];
-
+            const pick = candidates[0]; // Already sorted, so the next best is at the top
             if (pick) {
               modelSelect.value = pick;
-              modelHelp.textContent = `Previous model was retired/invalid. Switched to ${pick}.`;
+              modelHelp.textContent = `Previous model was invalid. Switched to ${pick}.`;
               modelName = pick;
               res = await callModel(modelName, payload, apiKey);
             }
@@ -514,7 +469,6 @@ Please generate the email body content as HTML only, followed by the strategist 
         let raw = (result?.candidates?.[0]?.content?.parts || []).map(p=>p.text).filter(Boolean).join('\n').trim();
         if (!raw) { showError('The model returned an empty response. Try another model.'); console.log('Full response:', result); return; }
 
-        // Split email vs notes BEFORE converting to HTML
         let emailPart = raw;
         let notesPart = '';
         const sepRe = /(?:^|\r?\n)\s*[-–—]{2,}\s*STRATEGIST\s+NOTES\s*[-–—]*\s*(?:\r?\n|$)/i;
@@ -528,20 +482,17 @@ Please generate the email body content as HTML only, followed by the strategist 
         emailHtml = enforceLsaNoCpcCpa(emailHtml);
         emailHtml = stripEmbeddedStrategistNotes(emailHtml);
 
-        // Add placeholder Insightful Analysis + closing if missing
         const lc = emailHtml.toLowerCase();
         if (!lc.includes('insightful analysis') && !lc.includes('best regards')) {
-          const closingHtml = `
+          emailHtml += `
             <p><strong>Insightful Analysis</strong></p>
             <p>&nbsp;</p>
             <p>Please let me know if you have any questions or if you would like to set up a call to go over performance.</p>
             <p>Best Regards,</p>
             <p>[Your Name]</p>
           `;
-          emailHtml += '\n' + closingHtml;
         }
 
-        // Inject links, strategist name, salutation
         emailHtml = injectSheetLink(emailHtml, sheetUrl);
         emailHtml = injectLsaReportLink(emailHtml, lsaUrl);
         emailHtml = applyStrategistName(emailHtml, strategistName);
@@ -593,14 +544,18 @@ Please generate the email body content as HTML only, followed by the strategist 
       URL.revokeObjectURL(url);
     });
 
-    // Load models on page load if key present
+    // Persist and load on start
     window.addEventListener('load', () => {
       const savedApiKey = localStorage.getItem('ppcGeneratorApiKey');
       if (savedApiKey) {
         apiKeyInput.value = savedApiKey;
         loadModels();
       }
+      const savedStrategistName = localStorage.getItem('ppcGeneratorStrategistName');
+      if (savedStrategistName) {
+        strategistNameInput.value = savedStrategistName;
+      }
     });
-  </script>
-</body>
-</html>
+    apiKeyInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorApiKey', apiKeyInput.value));
+    strategistNameInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorStrategistName',
+
