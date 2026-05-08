@@ -24,12 +24,30 @@
     #emailOutput ul, #strategistNotesOutput ul { margin: 0 0 1rem 1.25rem; list-style: disc; }
     #emailOutput li, #strategistNotesOutput li { margin: 0.25rem 0; }
     #emailOutput hr, #strategistNotesOutput hr { border: none; border-top: 1px solid #e5e7eb; margin: 1rem 0; }
+
+    /* FindLaw orange + CTA styling */
+    :root { --findlaw-orange: #F58220; --findlaw-orange-dark: #d66f14; --findlaw-orange-ring: rgba(245,130,32,0.35); }
+    .text-findlaw-orange { color: var(--findlaw-orange); }
+    .btn-orange {
+      background: var(--findlaw-orange); color: #fff;
+      transition: background .2s ease, box-shadow .2s ease;
+    }
+    .btn-orange:hover { background: var(--findlaw-orange-dark); }
+    .btn-orange:focus { outline: 3px solid var(--findlaw-orange-ring); outline-offset: 2px; }
+    .btn-orange:disabled { background: #9ca3af !important; cursor: not-allowed !important; }
+
+    /* Small button (Copy/Download) shared style */
+    .btn-light {
+      background:#e5e7eb; color:#374151; padding: .5rem .75rem; border-radius:.5rem;
+      transition: background .2s ease;
+    }
+    .btn-light:hover { background:#d1d5db; }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
   <div class="container mx-auto max-w-4xl p-4 sm:p-6 md:p-8">
     <header class="text-center mb-8">
-      <h1 class="text-3xl sm:text-4xl font-bold text-blue-600">FindLaw PPC Performance Email Generator</h1>
+      <h1 class="text-3xl sm:text-4xl font-bold text-findlaw-orange">FindLaw PPC Performance Email Generator</h1>
       <p class="text-md text-gray-600 mt-2">Create professional client reports in seconds.</p>
       <p class="text-sm text-gray-700 mt-4 bg-blue-50 p-3 rounded-lg border border-blue-200">
         <strong>Need help?</strong> <a href="https://drive.google.com/file/d/13ZYcTjTUpq5nblmYjPPY0sEcjriEls72/view?usp=sharing" target="_blank" rel="noopener noreferrer" class="font-semibold text-blue-600 underline hover:text-blue-700">Watch the instructional video</a> to get started.
@@ -123,10 +141,10 @@
       <!-- Step 4 -->
       <div>
         <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Step 4: Generate Email</h2>
-        <button id="generateBtn" class="w-full flex justify-center items-center bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed">
+        <button id="generateBtn" class="w-full flex justify-center items-center btn-orange font-bold py-3 px-4 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed">
           <svg id="button-icon" class="h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
           <span id="button-text">Generate Email</span>
-          <div id="loading-spinner" class="hidden animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+          <div id="loading-spinner" class="hidden animate-spin rounded-full h-5 w-5 border-b-2 border-white ml-2"></div>
         </button>
       </div>
 
@@ -134,13 +152,19 @@
       <div id="output" class="hidden">
         <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Step 5: Copy Your Generated Email</h2>
         <div class="relative">
-          <div id="emailOutput" class="w-full h-auto p-4 border border-gray-200 rounded-lg bg-gray-50 overflow-y-auto" contenteditable="true"></div>
-          <div class="tooltip absolute top-2 right-2">
-            <button id="copyBtn" class="bg-gray-200 text-gray-700 font-semibold py-2 px-3 rounded-lg hover:bg-gray-300 transition text-sm">Copy</button>
-            <span class="tooltiptext" id="copyTooltip">Copy to clipboard</span>
+          <div id="emailOutput" class="w-full h-auto p-4 border border-gray-200 rounded-lg bg-gray-50 overflow-y-auto"></div>
+          <div class="absolute top-2 right-2 flex gap-2">
+            <div class="tooltip">
+              <button id="copyBtn" class="btn-light text-sm">Copy</button>
+              <span class="tooltiptext" id="copyTooltip">Copy to clipboard</span>
+            </div>
+            <div class="tooltip">
+              <button id="downloadBtn" class="btn-light text-sm">Download HTML</button>
+              <span class="tooltiptext">Save as .html</span>
+            </div>
           </div>
         </div>
-        
+
         <!-- STRATEGIST NOTES SECTION -->
         <div id="strategistNotesContainer" class="hidden mt-6">
           <h3 class="text-lg font-semibold text-yellow-800 mb-2 flex items-center">
@@ -194,6 +218,7 @@
     const buttonText = document.getElementById('button-text');
     const outputDiv = document.getElementById('output');
     const emailOutput = document.getElementById('emailOutput');
+
     const strategistNotesContainer = document.getElementById('strategistNotesContainer');
     const strategistNotesOutput = document.getElementById('strategistNotesOutput');
 
@@ -211,42 +236,6 @@
     function showError(m){ errorText.textContent = m; errorMessage.classList.remove('hidden'); }
     function hideError(){ errorMessage.classList.add('hidden'); }
     function setLoading(b){ generateBtn.disabled=b; buttonText.classList.toggle('hidden', b); loadingSpinner.classList.toggle('hidden', !b); }
-
-    // Persist API key and Strategist Name
-    window.addEventListener('load', () => {
-      const savedApiKey = localStorage.getItem('ppcGeneratorApiKey');
-      if (savedApiKey) { apiKeyInput.value = savedApiKey; loadModels(); }
-      const savedStrategistName = localStorage.getItem('ppcGeneratorStrategistName');
-      if (savedStrategistName) { strategistNameInput.value = savedStrategistName; }
-    });
-    apiKeyInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorApiKey', apiKeyInput.value));
-    strategistNameInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorStrategistName', strategistNameInput.value));
-    
-    function handleFile(file){
-      if (!file || !file.type.startsWith('image/')) { showError('Please upload a valid image file (PNG/JPG).'); return; }
-      hideError();
-      fileNameDisplay.textContent = `SHAPE file: ${file.name}`;
-      const reader=new FileReader();
-      reader.onload=e=>{
-        const dataUrl=e.target.result;
-        const m=dataUrl.match(/^data:(.*?);base64,(.*)$/);
-        if(m){ imageMime=m[1]||'image/png'; imageBase64=m[2]; } else { imageMime=file.type||'image/png'; imageBase64=dataUrl.split(',')[1]; }
-        imagePreview.src=`data:${imageMime};base64,${imageBase64}`;
-        imagePreviewContainer.classList.remove('hidden');
-        dropzone.classList.add('ready');
-        diagMime.textContent=imageMime;
-      };
-      reader.readAsDataURL(file);
-    }
-    dropzone.addEventListener('click', ()=> fileHidden.click());
-    fileHidden.addEventListener('change', e=> handleFile(e.target.files[0]));
-    dropzone.addEventListener('dragover', e=> { e.preventDefault(); dropzone.classList.add('dragover'); });
-    dropzone.addEventListener('dragleave', ()=> dropzone.classList.remove('dragover'));
-    dropzone.addEventListener('drop', e=> { e.preventDefault(); dropzone.classList.remove('dragover'); if (e.dataTransfer.files.length>0) handleFile(e.dataTransfer.files[0]); });
-    document.addEventListener('paste', e=>{
-      const items=(e.clipboardData||e.originalEvent?.clipboardData)?.items||[];
-      for (const it of items) if (it.type.indexOf('image')===0) { handleFile(it.getAsFile()); break; }
-    });
 
     function escapeHtml(s){ return s.replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
     function toHtmlIfNeeded(text){
@@ -278,73 +267,54 @@
       });
     }
 
-    // Safety: if the model embedded a visible "Strategist Notes" block in the email HTML, strip it
     function stripEmbeddedStrategistNotes(html) {
       const re = /<p[^>]*>\s*<strong>\s*strategist\s+notes\s*<\/strong>\s*<\/p>[\s\S]*$/i;
       return html.replace(re, '');
+    }
+
+    // Link injectors
+    function injectSheetLink(html, url) {
+      const contactsLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/gi;
+      let cleanHtml = html.replace(contactsLineRe, '');
+      if (!url) return cleanHtml;
+      let safe = url.trim();
+      if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
+      const anchor = `<a href="${safe}" target="_blank" rel="noopener noreferrer">Google Sheet</a>`;
+      const line = `<p>The following link is for your ppc contacts for the period - ${anchor}</p>`;
+      const psIdx = cleanHtml.toLowerCase().indexOf('<p><strong>executive summary');
+      if (psIdx !== -1) return cleanHtml.slice(0, psIdx) + line + '\n' + cleanHtml.slice(psIdx);
+      const openingIdx = cleanHtml.toLowerCase().indexOf('</p>');
+      if (openingIdx !== -1) return cleanHtml.slice(0, openingIdx + 4) + '\n' + line + '\n' + cleanHtml.slice(openingIdx + 4);
+      return line + '\n' + cleanHtml;
+    }
+    function injectLsaReportLink(html, url) {
+      const lsaLineRe = /<p[^>]*>[\s\S]*?lsa\s*60[- ]day\s*report[\s\S]*?<\/p>/gi;
+      let clean = html.replace(lsaLineRe, '');
+      if (!url) return clean;
+      let safe = url.trim();
+      if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
+      const anchor = `<a href="${safe}" target="_blank" rel="noopener noreferrer">LSA 60-day report</a>`;
+      const line = `<p>The following link is for your LSA 60-day report - ${anchor}</p>`;
+      const sheetLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/i;
+      const m = clean.match(sheetLineRe);
+      if (m) return clean.replace(sheetLineRe, m[0] + '\n' + line);
+      const psIdx = clean.toLowerCase().indexOf('<p><strong>executive summary');
+      if (psIdx !== -1) return clean.slice(0, psIdx) + line + '\n' + clean.slice(psIdx);
+      const openingIdx = clean.toLowerCase().indexOf('</p>');
+      if (openingIdx !== -1) return clean.slice(0, openingIdx + 4) + '\n' + line + '\n' + clean.slice(openingIdx + 4);
+      return line + '\n' + clean;
     }
 
     function applyStrategistName(html, name) {
       const n = (name || '').trim();
       return n ? html.replace(/\[Your Name\]/g, escapeHtml(n)) : html;
     }
-
-    function injectSheetLink(html, url) {
-      const contactsLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/gi;
-      let cleanHtml = html.replace(contactsLineRe, '');
-      if (!url) return cleanHtml;
-
-      let safe = url.trim();
-      if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
-      const anchor = `<a href="${safe}" target="_blank" rel="noopener noreferrer">Google Sheet</a>`;
-      const canonicalLine = `<p>The following link is for your ppc contacts for the period - ${anchor}</p>`;
-      
-      const psIdx = cleanHtml.toLowerCase().indexOf('<p><strong>executive summary');
-      if (psIdx !== -1) {
-          return cleanHtml.slice(0, psIdx) + canonicalLine + '\n' + cleanHtml.slice(psIdx);
-      }
-      
-      const openingIdx = cleanHtml.toLowerCase().indexOf('</p>');
-      if (openingIdx !== -1) {
-          return cleanHtml.slice(0, openingIdx + 4) + '\n' + canonicalLine + '\n' + cleanHtml.slice(openingIdx + 4);
-      }
-
-      return canonicalLine + '\n' + cleanHtml;
-    }
-
-    // New: Inject LSA 60-Day link
-    function injectLsaReportLink(html, url) {
-      const lsaLineRe = /<p[^>]*>[\s\S]*?lsa\s*60[- ]day\s*report[\s\S]*?<\/p>/gi;
-      let clean = html.replace(lsaLineRe, '');
-      if (!url) return clean;
-
-      let safe = url.trim();
-      if (!/^https?:\/\//i.test(safe)) safe = 'https://' + safe;
-      const anchor = `<a href="${safe}" target="_blank" rel="noopener noreferrer">LSA 60-day report</a>`;
-      const canonical = `<p>The following link is for your LSA 60-day report - ${anchor}</p>`;
-
-      // If the Sheet link exists, place this right after it
-      const sheetLineRe = /<p[^>]*>[\s\S]*?ppc contacts for the period[\s\S]*?<\/p>/i;
-      const m = clean.match(sheetLineRe);
-      if (m) {
-        return clean.replace(sheetLineRe, m[0] + '\n' + canonical);
-      }
-
-      // Else, same placement strategy as the Sheet link
-      const psIdx = clean.toLowerCase().indexOf('<p><strong>executive summary');
-      if (psIdx !== -1) return clean.slice(0, psIdx) + canonical + '\n' + clean.slice(psIdx);
-
-      const openingIdx = clean.toLowerCase().indexOf('</p>');
-      if (openingIdx !== -1) return clean.slice(0, openingIdx + 4) + '\n' + canonical + '\n' + clean.slice(openingIdx + 4);
-
-      return canonical + '\n' + clean;
-    }
-
     function buildSalutation(firmName, contactName) {
       const target = (contactName || `${firmName} team` || 'Client').trim();
       return `<p>Dear ${escapeHtml(target)},</p>\n`;
     }
 
+    // Load models: show stable, multimodal general-use Gemini models; hide previews/robotics
     async function loadModels() {
       hideError();
       const apiKey = apiKeyInput.value.trim();
@@ -355,23 +325,46 @@
         const res = await fetch(url);
         if (!res.ok) throw new Error(`ListModels failed (${res.status})`);
         const data = await res.json();
+
+        const keep = (n) => {
+          const s = (n || '').toLowerCase();
+          const isGen = /gemini-(1\.5|1\.0)/.test(s);
+          const isGeneral = /(flash|pro)/.test(s);
+          const notPreview = !/(preview|exp|experimental)/.test(s);
+          const notRobotics = !/robot/.test(s);
+          return isGen && isGeneral && notPreview && notRobotics;
+        };
+
         const models = (data.models || [])
-          .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+          .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+          .filter(m => keep(m.name))
           .sort((a, b) => {
-            const score = n => (n.includes('1.5') ? 2 : (n.includes('1.0') ? 1 : 0)) + (n.includes('flash') ? 0.5 : 0);
-            return score(b.name || '') - score(a.name || '');
+            const score = (n) => {
+              const s = (n || '').toLowerCase();
+              return (s.includes('1.5') ? 20 : 10)
+                   + (s.includes('flash') ? 3 : 0)
+                   + (s.includes('pro') ? 2 : 0);
+            };
+            return score(b.name) - score(a.name);
           });
-        if (!models.length) { modelSelect.innerHTML = '<option value="">No models available for generateContent with this key.</option>'; showError('No compatible models found.'); return; }
+
+        if (!models.length) {
+          modelSelect.innerHTML = '<option value="">No stable multimodal models found for this key.</option>';
+          showError('No compatible models found. Ensure your key has access to Gemini models (try AI Studio keys).');
+          return;
+        }
+
         modelSelect.innerHTML = '';
         let defaultIndex = 0;
         models.forEach((m, idx) => {
           const opt = document.createElement('option');
-          opt.value = m.name; opt.textContent = m.name;
+          opt.value = m.name;
+          opt.textContent = m.name;
           modelSelect.appendChild(opt);
           if (m.name.includes('gemini-1.5-flash')) defaultIndex = idx;
         });
         modelSelect.selectedIndex = defaultIndex;
-        modelHelp.textContent = 'Models loaded. If one fails, try another.';
+        modelHelp.textContent = 'Models loaded. If one fails, the app will auto-switch to a stable fallback.';
       } catch (e) {
         showError(`Failed to load models: ${e.message}`);
         modelSelect.innerHTML = '<option value="">(Could not load models)</option>';
@@ -379,18 +372,57 @@
     }
     refreshModelsBtn.addEventListener('click', loadModels);
 
+    // File handling
+    function handleFile(file){
+      if (!file || !file.type.startsWith('image/')) { showError('Please upload a valid image file (PNG/JPG).'); return; }
+      hideError();
+      const reader=new FileReader();
+      reader.onload=e=>{
+        const dataUrl=e.target.result;
+        const m=dataUrl.match(/^data:(.*?);base64,(.*)$/);
+        if(m){ imageMime=m[1]||'image/png'; imageBase64=m[2]; } else { imageMime=file.type||'image/png'; imageBase64=dataUrl.split(',')[1]; }
+        fileNameDisplay.textContent = `SHAPE file: ${file.name}`;
+        imagePreview.src=`data:${imageMime};base64,${imageBase64}`;
+        imagePreviewContainer.classList.remove('hidden');
+        diagMime.textContent=imageMime;
+      };
+      reader.readAsDataURL(file);
+    }
+    dropzone.addEventListener('click', ()=> document.getElementById('fileHidden').click());
+    document.getElementById('fileHidden').addEventListener('change', e=> handleFile(e.target.files[0]));
+    dropzone.addEventListener('dragover', e=> { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', ()=> dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e=> { e.preventDefault(); dropzone.classList.remove('dragover'); if (e.dataTransfer.files.length>0) handleFile(e.dataTransfer.files[0]); });
+    document.addEventListener('paste', e=>{
+      const items=(e.clipboardData||e.originalEvent?.clipboardData)?.items||[];
+      for (const it of items) if (it.type.indexOf('image')===0) { handleFile(it.getAsFile()); break; }
+    });
+
+    // Retired/invalid model detection + fallback
+    function isRetiredModelError(errObj, status) {
+      const msg = (errObj?.error?.message || '').toLowerCase();
+      return status === 404 || /no longer available|not found|invalid model|unsupported model/.test(msg);
+    }
+    async function callModel(modelName, payload, apiKey) {
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      diagModel.textContent = modelName;
+      diagEndpoint.textContent = apiUrl;
+      const res = await fetch(apiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      return res;
+    }
+
     document.getElementById('generateBtn').addEventListener('click', async () => {
       hideError();
 
       const apiKey=apiKeyInput.value.trim();
-      const modelName=modelSelect.value;
+      let modelName=modelSelect.value;
       const strategistName=strategistNameInput.value.trim();
       const contactName = contactNameInput.value.trim();
       const firmName=firmNameInput.value.trim();
       const startDate=startDateInput.value;
       const endDate=endDateInput.value;
-      const sheetUrl=contactsUrlInput.value.trim();
-      const lsaUrl=lsaUrlInput.value.trim();
+      const sheetUrl=(contactsUrlInput.value || '').trim();
+      const lsaUrl=(lsaUrlInput.value || '').trim();
 
       if (!apiKey){ showError('Please paste your API key.'); return; }
       if (!modelName){ showError('Please load and select a model.'); return; }
@@ -398,6 +430,7 @@
 
       const formattedStart = new Date(startDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
       const formattedEnd = new Date(endDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
+      const dateRange = `${formattedStart} through ${formattedEnd}`;
 
       const systemPrompt = `You are an expert digital marketing strategist for law firms. You will produce two distinct parts: a professional, client-facing email, and a separate, internal-only notes section for the strategist.
 
@@ -425,13 +458,10 @@ After the client email, add a separator "--- STRATEGIST NOTES ---" and then writ
       const userQuery =
 `Law Firm Name: ${firmName}
 Strategist Name: ${strategistName || '(not provided)'}
+Date Range: ${dateRange}
 Google Sheets URL: ${sheetUrl || '(not provided)'}
 LSA 60-Day Report URL: ${lsaUrl || '(not provided)'}
 Please generate the email body content as HTML only, followed by the strategist notes as requested. Do not include the "Dear..." salutation, the link lines, or the "Insightful Analysis" content.`;
-
-      const apiUrl=`https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      diagModel.textContent=modelName;
-      diagEndpoint.textContent=apiUrl;
 
       const payload = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -440,18 +470,40 @@ Please generate the email body content as HTML only, followed by the strategist 
 
       try {
         setLoading(true);
-        const res = await fetch(apiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+
+        // 1) Try selected model
+        let res = await callModel(modelName, payload, apiKey);
+
+        // 2) If retired/not found, auto-switch to next best and retry once
         if (!res.ok) {
           const err = await res.json().catch(()=>({}));
-          const msg = err?.error?.message || `HTTP ${res.status}`;
-          showError(`Failed to generate email. API Error: ${msg}`);
-          return;
+          if (isRetiredModelError(err, res.status)) {
+            const options = Array.from(modelSelect.options).map(o=>o.value);
+            const candidates = options.filter(v => v !== modelName);
+            const pick = candidates.find(v=>/gemini-1\.5.*flash/i.test(v))
+                      || candidates.find(v=>/gemini-1\.5.*pro/i.test(v))
+                      || candidates[0];
+
+            if (pick) {
+              modelSelect.value = pick;
+              modelHelp.textContent = `Previous model was retired/invalid. Switched to ${pick}.`;
+              modelName = pick;
+              res = await callModel(modelName, payload, apiKey);
+            }
+          }
+          if (!res.ok) {
+            const lastErr = await res.json().catch(()=>({}));
+            const msg = lastErr?.error?.message || `HTTP ${res.status}`;
+            showError(`Failed to generate email. API Error: ${msg}`);
+            return;
+          }
         }
+
         const result = await res.json();
         let raw = (result?.candidates?.[0]?.content?.parts || []).map(p=>p.text).filter(Boolean).join('\n').trim();
         if (!raw) { showError('The model returned an empty response. Try another model.'); console.log('Full response:', result); return; }
 
-        // Split email vs strategist notes BEFORE converting to HTML
+        // Split email vs notes BEFORE converting to HTML
         let emailPart = raw;
         let notesPart = '';
         const sepRe = /(?:^|\r?\n)\s*[-–—]{2,}\s*STRATEGIST\s+NOTES\s*[-–—]*\s*(?:\r?\n|$)/i;
@@ -486,7 +538,6 @@ Please generate the email body content as HTML only, followed by the strategist 
 
         emailOutput.innerHTML = emailHtml;
 
-        // Notes box
         if (notesPart.trim()) {
           strategistNotesOutput.innerHTML = toHtmlIfNeeded(notesPart).toUpperCase();
           strategistNotesContainer.classList.remove('hidden');
@@ -502,7 +553,7 @@ Please generate the email body content as HTML only, followed by the strategist 
       }
     });
 
-    // Copy
+    // Copy (HTML) with fallback to plain text
     document.getElementById('copyBtn').addEventListener('click', async () => {
       const html = emailOutput.innerHTML;
       try {
@@ -510,10 +561,33 @@ Please generate the email body content as HTML only, followed by the strategist 
         const item = new ClipboardItem({ 'text/html': blob });
         await navigator.clipboard.write([item]);
         const tip = document.getElementById('copyTooltip');
-        tip.textContent = 'Copied!';
-        setTimeout(() => tip.textContent = 'Copy to clipboard', 2000);
+        if (tip) { tip.textContent = 'Copied!'; setTimeout(() => tip.textContent = 'Copy to clipboard', 2000); }
       } catch {
         await navigator.clipboard.writeText(emailOutput.innerText);
+      }
+    });
+
+    // Download HTML
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      const html = emailOutput.innerHTML || '';
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const d = new Date().toISOString().slice(0,10);
+      a.download = `ppc-email-${d}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // Load models on page load if key present
+    window.addEventListener('load', () => {
+      const savedApiKey = localStorage.getItem('ppcGeneratorApiKey');
+      if (savedApiKey) {
+        apiKeyInput.value = savedApiKey;
+        loadModels();
       }
     });
   </script>
