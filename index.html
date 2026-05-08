@@ -20,6 +20,8 @@
     .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
     input[type="date"]::-webkit-calendar-picker-indicator { cursor:pointer; opacity:.6; transition:opacity .2s; }
     input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:1; }
+    #dropzone.dragover { border-color: #3b82f6; }
+    #dropzone.ready { border-color: #10b981; }
     #emailOutput p, #strategistNotesOutput p { margin: 0 0 0.75rem 0; }
     #emailOutput ul, #strategistNotesOutput ul { margin: 0 0 1rem 1.25rem; list-style: disc; }
     #emailOutput li, #strategistNotesOutput li { margin: 0.25rem 0; }
@@ -305,7 +307,7 @@
     async function loadModels() {
       hideError();
       const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) { modelSelect.innerHTML = '<option value="">(Enter API key, then click Refresh models)</option>'; return; }
+      if (!apiKey) { modelSelect.innerHTML = '<option value="">(Load models using your API key)</option>'; return; }
       modelSelect.innerHTML = '<option value="">Loading models...</option>';
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
@@ -342,7 +344,7 @@
           opt.textContent = m.name;
           modelSelect.appendChild(opt);
         });
-        modelSelect.selectedIndex = 0; // The highest scored is the new default
+        modelSelect.selectedIndex = 0;
 
         modelHelp.textContent = stable.length
           ? 'Models loaded. If one fails, the app will auto-switch to a stable fallback.'
@@ -364,7 +366,7 @@
         const m=dataUrl.match(/^data:(.*?);base64,(.*)$/);
         if(m){ imageMime=m[1]||'image/png'; imageBase64=m[2]; } else { imageMime=file.type||'image/png'; imageBase64=dataUrl.split(',')[1]; }
         fileNameDisplay.textContent = `SHAPE file: ${file.name}`;
-        imagePreview.src=`data:$${imageMime};base64,$${imageBase64}`;
+        imagePreview.src=`data:${imageMime};base64,${imageBase64}`;
         imagePreviewContainer.classList.remove('hidden');
         diagMime.textContent=imageMime;
       };
@@ -386,7 +388,7 @@
       return status === 404 || /no longer available|not found|invalid model|unsupported model/.test(msg);
     }
     async function callModel(modelName, payload, apiKey) {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/$${modelName}:generateContent?key=$${encodeURIComponent(apiKey)}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
       diagModel.textContent = modelName;
       diagEndpoint.textContent = apiUrl;
       const res = await fetch(apiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -407,9 +409,9 @@
 
       if (!apiKey || !modelName || !firmName || !startDate || !endDate || !imageBase64){ showError('Please complete all required fields and upload a screenshot.'); return; }
 
-      const formattedStart = new Date(startDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
-      const formattedEnd = new Date(endDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric', timeZone:'UTC'});
-      const dateRange = `$${formattedStart} through $${formattedEnd}`;
+      const formattedStart = new Date(startDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'UTC'});
+      const formattedEnd = new Date(endDate).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'UTC'});
+      const dateRange = `${formattedStart} through ${formattedEnd}`;
 
       const systemPrompt = `You are an expert digital marketing strategist for law firms. You will produce two distinct parts: a professional, client-facing email, and a separate, internal-only notes section for the strategist.
 
@@ -420,7 +422,7 @@ Write an email for the law firm client based on the provided SHAPE dashboard scr
 - Use <p> and <strong> for text; <ul><li> for lists.
 
 Required Structure:
-- Opening: Start with "This report summarizes the performance of your search engine marketing campaigns for the period of $${formattedStart} through $${formattedEnd}."
+- Opening: Start with "This report summarizes the performance of your search engine marketing campaigns for the period of ${dateRange}."
 - <p><strong>Executive Summary</strong></p>: A concise <ul> with COMBINED TOTALS for Spend, Impressions, Clicks, Conversions (or Leads if LSA is present), and Conversion Rate (or Lead Rate if LSA is present). If any LSA data appears on the screenshot, OMIT CPC and Cost per conversion (CPA) here, and prefer Leads/Lead Rate.
 - <p><strong>Performance Summary</strong></p>: A breakdown by platform (e.g., LSA, Google Ads, Microsoft Ads). For each platform, list key metrics. IMPORTANT for LSA (Local Services Ads):
   • DO NOT display CPC or Cost per conversion (CPA).
@@ -432,7 +434,7 @@ Required Structure:
 PART 2: STRATEGIST NOTES
 After the client email, add a separator "--- STRATEGIST NOTES ---" and then write a separate section with tactical, internal-only recommendations for the PPC strategist. These notes should be in ALL CAPS. Base them on all provided data.`;
 
-      const userQuery = `Generate email and notes for $${firmName} ($${dateRange}).`;
+      const userQuery = `Generate email and notes for ${firmName} (${dateRange}).`;
 
       const payload = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -557,5 +559,7 @@ After the client email, add a separator "--- STRATEGIST NOTES ---" and then writ
       }
     });
     apiKeyInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorApiKey', apiKeyInput.value));
-    strategistNameInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorStrategistName',
-
+    strategistNameInput.addEventListener('input', () => localStorage.setItem('ppcGeneratorStrategistName', strategistNameInput.value));
+  </script>
+</body>
+</html>
